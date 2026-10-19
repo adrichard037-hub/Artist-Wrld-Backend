@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
@@ -35,7 +35,7 @@ function createAdapter(): PrismaMariaDb {
     ...(isAiven
       ? {
           ssl: {
-            ca: readFileSync(resolve(process.cwd(), "ca.pem"), "utf8"),
+            ca: readFileSync(process.env.RENDER ? "/etc/secrets/ca.pem" : resolve(process.cwd(), "ca.pem"), "utf8"),
             rejectUnauthorized: true,
           },
         }
