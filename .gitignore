@@ -1,0 +1,50 @@
+
+.env
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated files
+node_modules/
+dist/
+src/generated/
+
+# Local backups and database exports
+backups/
+*.bak
+*.backup
+*.sql
+*.dump
+
+
+# Local certificates and diagnostic output
+ca.pem
+*.txt
+
+# Local inspection and cleanup utilities
+check-artist-accounts.mts
+cleanup-test-accounts.ts
+inspect-cleanup.cjs
+inspect-cleanup.ts
+verify-cleanup.ts
+
+
+# Local backup and temporary files
+*.backup
+*.backup-*
+*.bak
+*.tmp
+*-backup
+*-backup-*
+src/test-db.ts
+
+# Local backup and temporary files
+*.backup
+*.backup-*
+*.bak
+*.tmp
+*-backup
+*-backup-*
+src/test-db.ts
