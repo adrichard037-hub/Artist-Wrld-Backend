@@ -24,6 +24,9 @@ const loginRateLimit = rateLimit({
 const app = express();
 const port = Number(process.env.PORT || 4000);
 
+// Render terminates HTTPS at a proxy; needed for secure cookies and rate limiting.
+app.set("trust proxy", 1);
+
 const allowedOrigins = (
   process.env.FRONTEND_URL || "http://localhost:5173"
 )
