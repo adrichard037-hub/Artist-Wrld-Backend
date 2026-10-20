@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -120,7 +121,7 @@ router.post("/", requireRole("ADMIN"), async (req, res) => {
 
 // Delivery workers can update only their own assignments.
 // Administrators can update any assignment.
-router.patch("/:id/status", requireRole("DELIVERY_MAN", "ADMIN"), async (req, res) => {
+router.patch("/:id/status", requireRole("DELIVERY_MAN", "ADMIN"), async (req, res: Response) => {
   const parsed = statusSchema.safeParse(req.body);
 
   if (!parsed.success) {
