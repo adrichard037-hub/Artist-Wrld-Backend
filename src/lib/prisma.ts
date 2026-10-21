@@ -32,6 +32,7 @@ function createAdapter(): PrismaMariaDb {
     password: decodeURIComponent(url.password),
     database,
     connectionLimit: 5,
+    allowPublicKeyRetrieval: true,
     ...(isAiven
       ? {
           ssl: {

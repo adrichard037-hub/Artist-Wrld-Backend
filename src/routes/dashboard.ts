@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -45,26 +45,41 @@ router.get("/profile", async (req, res) => {
     let profile: unknown = null;
 
     switch (authUser.role) {
-      case "ARTIST":
-        profile = await prisma.artistprofile.findUnique({
+      case "ARTIST": {
+        const artistProfile = await prisma.artistprofile.findUnique({
           where: { userId: authUser.id },
         });
-        break;
 
-      case "BUYER":
-        profile = await prisma.buyerprofile.findUnique({
-          where: { userId: authUser.id },
-        });
+        profile = artistProfile
+          ? { ...artistProfile, profileImage: artistProfile.profileImage }
+          : null;
         break;
+      }
 
-      case "DELIVERY_MAN":
-        profile = await prisma.deliveryprofile.findUnique({
+      case "BUYER": {
+        const buyerProfile = await prisma.buyerprofile.findUnique({
           where: { userId: authUser.id },
         });
+
+        profile = buyerProfile
+          ? { ...buyerProfile, profileImage: buyerProfile.profileImage }
+          : null;
         break;
+      }
+
+      case "DELIVERY_MAN": {
+        const deliveryProfile = await prisma.deliveryprofile.findUnique({
+          where: { userId: authUser.id },
+        });
+
+        profile = deliveryProfile
+          ? { ...deliveryProfile, profileImage: deliveryProfile.avatar }
+          : null;
+        break;
+      }
 
       case "ADMIN":
-        profile = null;
+        profile = { profileImage: null };
         break;
     }
 
@@ -303,3 +318,4 @@ router.put("/preferences", async (req, res) => {
 });
 
 export default router;
+

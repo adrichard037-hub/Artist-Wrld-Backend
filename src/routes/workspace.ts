@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -654,20 +655,20 @@ router.post("/backup", async (req, res) => {
       });
     }
 
-    const payload = {
+    const payload: Prisma.InputJsonValue = JSON.parse(JSON.stringify({
       format: "artist-wrld-backup-v1",
       ownerId: user.id,
       ownerRole: user.role,
       createdAt: new Date().toISOString(),
       data,
-    };
+    }));
 
     const snapshot = await prisma.backupsnapshot.create({
       data: {
         ownerId: user.id,
         ownerRole: user.role,
         format: "artist-wrld-backup-v1",
-        payload: JSON.parse(JSON.stringify(payload)),
+        payload,
       },
       select: {
         id: true,
