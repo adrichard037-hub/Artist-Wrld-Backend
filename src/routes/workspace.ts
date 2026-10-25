@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
@@ -734,6 +734,49 @@ router.get("/backups", async (req, res) => {
   }
 });
 
+
+// Delete only a backup snapshot owned by the signed-in account and role.
+router.delete("/backups/:snapshotId", async (req, res) => {
+  const user = req.authUser!;
+  const parsedId = z.string().trim().min(1).max(191).safeParse(
+    req.params.snapshotId,
+  );
+
+  if (!parsedId.success) {
+    return res.status(400).json({
+      message: "Provide a valid backup snapshot ID.",
+    });
+  }
+
+  try {
+    const result = await prisma.backupsnapshot.deleteMany({
+      where: {
+        id: parsedId.data,
+        ownerId: user.id,
+        ownerRole: user.role,
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        message: "Backup not found for this account.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Backup deleted successfully.",
+    });
+  } catch (error) {
+    console.error(
+      "Backup deletion failed:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
+
+    return res.status(500).json({
+      message: "Unable to delete this backup.",
+    });
+  }
+});
 // Restore only from a snapshot owned by this same account and role.
 // Restoration is create-only: existing records are never updated.
 router.post("/restore", async (req, res) => {
@@ -1307,5 +1350,6 @@ router.post("/restore", async (req, res) => {
   }
 });
 export default router;
+
 
 

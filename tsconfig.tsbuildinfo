@@ -1,0 +1,1 @@
+{"root":["./src/server.ts","./src/test-db.ts","./src/lib/password.ts","./src/lib/prisma.ts","./src/lib/twofactorcrypto.ts","./src/middleware/auth.ts","./src/routes/admin.ts","./src/routes/artists.ts","./src/routes/artworks.ts","./src/routes/auth.ts","./src/routes/dashboard.ts","./src/routes/deliveries.ts","./src/routes/wishlist.ts","./src/routes/workspace.ts"],"version":"6.0.3"}
