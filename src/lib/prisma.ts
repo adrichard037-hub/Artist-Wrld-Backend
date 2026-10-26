@@ -32,6 +32,8 @@ function createAdapter(): PrismaMariaDb {
     password: decodeURIComponent(url.password),
     database,
     connectionLimit: 5,
+    connectTimeout: 60000,
+    acquireTimeout: 60000,
     allowPublicKeyRetrieval: true,
     ...(isAiven
       ? {
@@ -48,4 +50,7 @@ function createAdapter(): PrismaMariaDb {
 
 const adapter = createAdapter();
 
-export const prisma = new PrismaClient({ adapter });
+export const prisma = new PrismaClient({
+  adapter,
+  transactionOptions: { maxWait: 60000, timeout: 120000 },
+});
