@@ -13,6 +13,26 @@ import QRCode from "qrcode";
 
 const router = Router();
 
+// "none" is only needed when the browser calls the API on a different site.
+// If the frontend proxies /api through its own domain (Vercel rewrite), set
+// COOKIE_SAMESITE=lax on the server for better CSRF protection.
+const configuredSameSite = (process.env.COOKIE_SAMESITE ?? "").toLowerCase();
+const sessionCookieSameSite: "none" | "lax" | "strict" =
+  configuredSameSite === "lax" || configuredSameSite === "strict" || configuredSameSite === "none"
+    ? configuredSameSite
+    : process.env.NODE_ENV === "production"
+      ? "none"
+      : "lax";
+
+// Used to keep login timing the same whether or not the account exists.
+let dummyPasswordHash: Promise<string> | null = null;
+function getDummyPasswordHash(): Promise<string> {
+  dummyPasswordHash ??= hashPassword("timing-equalizer-password").then(
+    (result) => result.passwordHash,
+  );
+  return dummyPasswordHash;
+}
+
 const loginSchema = z.object({
   identifier: z.string().trim().min(1).max(254),
   password: z.string().min(1).max(128),
@@ -208,6 +228,9 @@ router.post("/login", async (req, res) => {
     });
 
     if (!user) {
+      // Spend the same time as a real check so response timing does not reveal
+      // which usernames or emails exist.
+      await verifyPassword(password, await getDummyPasswordHash());
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
@@ -291,7 +314,7 @@ router.post("/login", async (req, res) => {
     res.cookie("artist_wrld_session", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: sessionCookieSameSite,
       path: "/",
       maxAge,
     });
@@ -832,6 +855,23 @@ router.post("/2fa/verify-login", async (req, res) => {
       });
     }
 
+    // Count the attempt atomically BEFORE checking the code. Parallel requests
+    // cannot all read the same counter, so at most 5 guesses are ever checked.
+    const claimedAttempt = await prisma.loginchallenge.updateMany({
+      where: { id: challenge.id, attempts: { lt: 5 } },
+      data: { attempts: { increment: 1 } },
+    });
+
+    if (claimedAttempt.count === 0) {
+      await prisma.loginchallenge.deleteMany({
+        where: { id: challenge.id },
+      });
+
+      return res.status(401).json({
+        message: "The login challenge is invalid or has expired.",
+      });
+    }
+
     const secret = decryptTwoFactorSecret(user.twoFactorSecret);
     const result = await verify({
       secret,
@@ -844,14 +884,6 @@ router.post("/2fa/verify-login", async (req, res) => {
       if (nextAttempts >= 5) {
         await prisma.loginchallenge.deleteMany({
           where: { id: challenge.id },
-        });
-      } else {
-        await prisma.loginchallenge.updateMany({
-          where: {
-            id: challenge.id,
-            attempts: challenge.attempts,
-          },
-          data: { attempts: { increment: 1 } },
         });
       }
 
@@ -895,7 +927,7 @@ router.post("/2fa/verify-login", async (req, res) => {
     res.cookie("artist_wrld_session", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: sessionCookieSameSite,
       path: "/",
       maxAge,
     });
@@ -961,7 +993,7 @@ function clearSessionCookie(res: import("express").Response) {
   res.clearCookie("artist_wrld_session", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    sameSite: sessionCookieSameSite,
     path: "/",
   });
 }

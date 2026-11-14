@@ -48,3 +48,14 @@ src/test-db.ts
 *-backup
 *-backup-*
 src/test-db.ts
+
+# Compiled output must never be committed (tsx runs the .ts source directly)
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
+*.tsbuildinfo
+*.zip
+
+# Private security reports
+private/

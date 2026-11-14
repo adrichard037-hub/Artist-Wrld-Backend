@@ -53,36 +53,8 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
-// Administrator-only security report. Never return the pepper itself.
-router.get("/security-report", async (_req, res) => {
-  res.setHeader("Cache-Control", "no-store");
-
-  try {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        username: true,
-        passwordHash: true,
-        passwordSalt: true,
-      },
-    });
-
-    return res.status(200).json({
-      users,
-      pepperConfigured: Boolean(process.env.PEPPER),
-    });
-  } catch (error) {
-    console.error(
-      "Admin security report failed:",
-      error instanceof Error ? error.message : "Unknown error",
-    );
-
-    return res.status(500).json({
-      message: "Unable to retrieve the security report.",
-    });
-  }
-});
+// The password-hash security report endpoint was removed on purpose:
+// password hashes and salts must never be sent to a browser.
 // List accounts without exposing password hashes, salts, or 2FA secrets.
 router.get("/users", async (_req, res) => {
   try {

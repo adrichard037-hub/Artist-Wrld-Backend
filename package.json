@@ -7,7 +7,9 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "dev": "tsx watch src/server.ts",
         "typecheck": "prisma generate && tsc --noEmit",
-        "start": "tsx src/server.ts"
+        "start": "tsx src/server.ts",
+        "postinstall": "prisma generate",
+        "build": "prisma generate && tsc --noEmit"
     },
     "keywords": [],
     "author": "",
@@ -23,16 +25,16 @@
         "express-rate-limit": "^8.7.1",
         "helmet": "^8.3.0",
         "otplib": "^13.5.0",
+        "prisma": "^7.10.1",
         "qrcode": "^1.5.4",
+        "tsx": "^4.23.15",
+        "typescript": "^6.0.3",
         "zod": "^4.6.7"
     },
     "devDependencies": {
         "@types/cors": "^2.8.19",
         "@types/express": "^5.0.6",
         "@types/node": "^26.6.5",
-        "@types/qrcode": "^1.5.6",
-        "prisma": "^7.10.1",
-        "tsx": "^4.23.15",
-        "typescript": "^6.0.3"
+        "@types/qrcode": "^1.5.6"
     }
 }

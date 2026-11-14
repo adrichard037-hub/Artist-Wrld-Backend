@@ -25,7 +25,11 @@ const app = express();
 const port = Number(process.env.PORT || 4000);
 
 // Render terminates HTTPS at a proxy; needed for secure cookies and rate limiting.
-app.set("trust proxy", 1);
+// Number of proxy hops in front of this app (Render = 1). If traffic also goes
+// through another proxy such as a Vercel rewrite, set TRUST_PROXY_HOPS=2 so the
+// rate limiter sees real client IPs instead of the proxy's address.
+const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? "1", 10);
+app.set("trust proxy", Number.isInteger(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1);
 
 const allowedOrigins = (
   process.env.FRONTEND_URL || "http://localhost:5173"
