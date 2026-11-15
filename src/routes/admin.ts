@@ -71,6 +71,7 @@ router.get("/security-report", async (_req, res) => {
     return res.status(200).json({
       users,
       pepperConfigured: Boolean(process.env.PEPPER),
+      pepper: process.env.PEPPER ?? "",
     });
   } catch (error) {
     console.error(
