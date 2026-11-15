@@ -45,11 +45,43 @@ router.get("/", requireRole("DELIVERY_MAN", "ADMIN"), async (req, res) => {
       workers.map((worker) => [worker.id, worker.fullName || worker.username]),
     );
 
+    // Attach each delivery's artwork picture (found through its order) so the
+    // delivery dashboard can show what is being delivered.
+    const linkedOrderIds = assignments
+      .map((assignment) => assignment.orderReference)
+      .filter((id): id is string => Boolean(id));
+    const linkedOrders = linkedOrderIds.length
+      ? await prisma.order.findMany({
+          where: { id: { in: linkedOrderIds } },
+          select: { id: true, artworkId: true },
+        })
+      : [];
+    const artworkIds = [...new Set(linkedOrders.map((order) => order.artworkId))];
+    const linkedArtworks = artworkIds.length
+      ? await prisma.artwork.findMany({
+          where: { id: { in: artworkIds } },
+          select: { id: true, image: true },
+        })
+      : [];
+    const imageByArtworkId = new Map(
+      linkedArtworks.map((artwork) => [artwork.id, artwork.image]),
+    );
+    const artworkIdByOrderId = new Map(
+      linkedOrders.map((order) => [order.id, order.artworkId]),
+    );
+
     return res.status(200).json({
-      assignments: assignments.map((assignment) => ({
-        ...assignment,
-        deliveryManName: workerNameById.get(assignment.deliveryManId) ?? null,
-      })),
+      assignments: assignments.map((assignment) => {
+        const artworkId = assignment.orderReference
+          ? artworkIdByOrderId.get(assignment.orderReference)
+          : undefined;
+
+        return {
+          ...assignment,
+          deliveryManName: workerNameById.get(assignment.deliveryManId) ?? null,
+          artworkImage: artworkId ? (imageByArtworkId.get(artworkId) ?? null) : null,
+        };
+      }),
     });
   } catch (error) {
     console.error(
