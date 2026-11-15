@@ -32,7 +32,25 @@ router.get("/", requireRole("DELIVERY_MAN", "ADMIN"), async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    return res.status(200).json({ assignments });
+    const workerIds = [
+      ...new Set(assignments.map((assignment) => assignment.deliveryManId)),
+    ];
+    const workers = workerIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: workerIds } },
+          select: { id: true, fullName: true, username: true },
+        })
+      : [];
+    const workerNameById = new Map(
+      workers.map((worker) => [worker.id, worker.fullName || worker.username]),
+    );
+
+    return res.status(200).json({
+      assignments: assignments.map((assignment) => ({
+        ...assignment,
+        deliveryManName: workerNameById.get(assignment.deliveryManId) ?? null,
+      })),
+    });
   } catch (error) {
     console.error(
       "Delivery assignment retrieval failed:",
@@ -119,6 +137,132 @@ router.post("/", requireRole("ADMIN"), async (req, res) => {
   }
 });
 
+const fromOrderSchema = z.object({
+  orderId: z.string().trim().min(1).max(191),
+  deliveryManId: z.string().trim().min(1).max(191),
+  scheduledDate: z.string().datetime().nullable().optional(),
+}).strict();
+
+// Administrators create a delivery assignment straight from a paid order.
+// Pickup, destination and customer details are copied from the order itself.
+router.post("/from-order", requireRole("ADMIN"), async (req, res) => {
+  const parsed = fromOrderSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      message: "Choose an order and a delivery worker.",
+    });
+  }
+
+  const data = parsed.data;
+  const admin = req.authUser!;
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: data.orderId },
+    });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (order.status !== "PAID" && order.status !== "PROCESSING") {
+      return res.status(409).json({
+        message:
+          "Only paid orders can be sent for delivery. Mark the order as PAID after payment is verified.",
+      });
+    }
+
+    const activeAssignment = await prisma.deliveryassignment.findFirst({
+      where: { orderReference: order.id },
+      select: { id: true },
+    });
+
+    if (activeAssignment) {
+      return res.status(409).json({
+        message: "This order already has a delivery assignment.",
+      });
+    }
+
+    const [deliveryWorker, buyer, artistProfile, artist] = await Promise.all([
+      prisma.user.findFirst({
+        where: {
+          id: data.deliveryManId,
+          role: "DELIVERY_MAN",
+          isActive: true,
+          registrationComplete: true,
+        },
+        select: { id: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: order.buyerId },
+        select: { fullName: true, username: true },
+      }),
+      prisma.artistprofile.findUnique({
+        where: { userId: order.artistId },
+        select: { location: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: order.artistId },
+        select: { fullName: true, username: true },
+      }),
+    ]);
+
+    if (!deliveryWorker) {
+      return res.status(400).json({
+        message: "The selected delivery worker is unavailable.",
+      });
+    }
+
+    const artistName = artist?.fullName || artist?.username || "the artist";
+    const pickup = (
+      artistProfile?.location?.trim()
+        ? `${artistName} - ${artistProfile.location.trim()}`
+        : `Collect from ${artistName}`
+    ).slice(0, 255);
+
+    const [assignment] = await prisma.$transaction([
+      prisma.deliveryassignment.create({
+        data: {
+          deliveryManId: deliveryWorker.id,
+          orderReference: order.id,
+          artworkTitle: order.artworkTitle.slice(0, 150),
+          customerName: (buyer?.fullName || buyer?.username || "Customer").slice(0, 150),
+          pickup,
+          destination: order.shippingAddress.replace(/\s+/g, " ").trim().slice(0, 255),
+          scheduledDate: data.scheduledDate ? new Date(data.scheduledDate) : null,
+        },
+      }),
+      prisma.order.update({
+        where: { id: order.id },
+        data: { status: "PROCESSING" },
+      }),
+      prisma.auditlog.create({
+        data: {
+          username: admin.username,
+          role: admin.role,
+          action: "DELIVERY_ASSIGNED_FROM_ORDER",
+          details: `Order ${order.id} assigned for delivery.`,
+        },
+      }),
+    ]);
+
+    return res.status(201).json({
+      message: "Delivery assigned and the order is now processing.",
+      assignment,
+    });
+  } catch (error) {
+    console.error(
+      "Delivery assignment from order failed:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
+
+    return res.status(500).json({
+      message: "Unable to assign the delivery.",
+    });
+  }
+});
+
 // Delivery workers can update only their own assignments.
 // Administrators can update any assignment.
 router.patch("/:id/status", requireRole("DELIVERY_MAN", "ADMIN"), async (req, res: Response) => {
@@ -163,6 +307,28 @@ router.patch("/:id/status", requireRole("DELIVERY_MAN", "ADMIN"), async (req, re
       where: { id: existing.id },
       data: { status: parsed.data.status },
     });
+
+    // Keep the linked order in step with the delivery so buyers, artists and
+    // admins all see the same progress. Unpaid or cancelled orders are left alone.
+    if (assignment.orderReference) {
+      const orderStatusForDelivery: Record<string, string> = {
+        Assigned: "PROCESSING",
+        "Picked Up": "SHIPPED",
+        "In Transit": "SHIPPED",
+        Delivered: "DELIVERED",
+      };
+      const nextOrderStatus = orderStatusForDelivery[assignment.status];
+
+      if (nextOrderStatus) {
+        await prisma.order.updateMany({
+          where: {
+            id: assignment.orderReference,
+            status: { notIn: ["PENDING", "CANCELLED"] },
+          },
+          data: { status: nextOrderStatus },
+        });
+      }
+    }
 
     await prisma.auditlog.create({
       data: {

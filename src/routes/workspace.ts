@@ -73,7 +73,71 @@ router.get("/orders", async (req, res) => {
       take: 200,
     });
 
-    return res.status(200).json({ orders });
+    // Attach readable names and delivery progress so every dashboard can show
+    // the same order without extra requests.
+    const orderIds = orders.map((order) => order.id);
+    const assignments = orderIds.length
+      ? await prisma.deliveryassignment.findMany({
+          where: { orderReference: { in: orderIds } },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            orderReference: true,
+            status: true,
+            deliveryManId: true,
+          },
+        })
+      : [];
+
+    const assignmentByOrder = new Map<string, (typeof assignments)[number]>();
+    for (const assignment of assignments) {
+      if (assignment.orderReference) {
+        assignmentByOrder.set(assignment.orderReference, assignment);
+      }
+    }
+
+    const personIds = new Set<string>();
+    for (const order of orders) {
+      personIds.add(order.buyerId);
+      personIds.add(order.artistId);
+    }
+    if (user.role === "ADMIN") {
+      for (const assignment of assignments) {
+        personIds.add(assignment.deliveryManId);
+      }
+    }
+
+    const people = personIds.size
+      ? await prisma.user.findMany({
+          where: { id: { in: [...personIds] } },
+          select: { id: true, fullName: true, username: true },
+        })
+      : [];
+    const nameById = new Map(
+      people.map((person) => [person.id, person.fullName || person.username]),
+    );
+
+    const enrichedOrders = orders.map((order) => {
+      const assignment = assignmentByOrder.get(order.id);
+      const { shippingAddress, ...rest } = order;
+
+      return {
+        ...rest,
+        // Artists do not need the buyer's home address; admins, buyers and
+        // couriers do.
+        ...(user.role === "ARTIST" ? {} : { shippingAddress }),
+        buyerName: nameById.get(order.buyerId) ?? "Unknown buyer",
+        artistName: nameById.get(order.artistId) ?? "Unknown artist",
+        deliveryAssignmentId: assignment?.id ?? null,
+        deliveryStatus: assignment?.status ?? null,
+        deliveryManName:
+          user.role === "ADMIN" && assignment
+            ? (nameById.get(assignment.deliveryManId) ?? null)
+            : null,
+      };
+    });
+
+    return res.status(200).json({ orders: enrichedOrders });
   } catch (error) {
     console.error(
       "Order retrieval failed:",
