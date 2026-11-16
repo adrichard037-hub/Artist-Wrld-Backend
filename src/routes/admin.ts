@@ -689,6 +689,37 @@ const artistDecisionSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED"]),
 }).strict();
 
+// Small counts for the sidebar badges, so the admin page does not have to
+// download every order and delivery just to show a number.
+router.get("/nav-counts", async (_req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+
+    const [orders, deliveries, pendingArtistApplications] = await Promise.all([
+      prisma.order.count(),
+      prisma.deliveryassignment.count(),
+      prisma.user.count({
+        where: { role: "ARTIST", artistApprovalStatus: "PENDING" },
+      }),
+    ]);
+
+    return res.status(200).json({
+      orders,
+      deliveries,
+      pendingArtistApplications,
+    });
+  } catch (error) {
+    console.error(
+      "Admin navigation counts failed:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
+
+    return res.status(500).json({
+      message: "Unable to load the navigation counts.",
+    });
+  }
+});
+
 router.get("/artist-applications", async (req, res) => {
   const parsed = artistApplicationQuerySchema.safeParse(req.query);
 
