@@ -204,16 +204,20 @@ router.post("/orders", requireRole("BUYER"), async (req, res) => {
       });
     }
 
-    const unitPrice = Number(artwork.price);
-    const total = unitPrice * parsed.data.quantity;
+    // Exact decimal arithmetic: money is never calculated with floating point.
+    const unitPrice = new Prisma.Decimal(artwork.price);
+    const total = unitPrice.mul(parsed.data.quantity);
 
-    if (
-      !Number.isFinite(unitPrice) ||
-      !Number.isFinite(total) ||
-      unitPrice <= 0
-    ) {
+    if (!unitPrice.isFinite() || unitPrice.lte(0)) {
       return res.status(409).json({
         message: "The artwork price is invalid.",
+      });
+    }
+
+    // The order total column holds at most 9,999,999,999.99.
+    if (total.gt("9999999999.99")) {
+      return res.status(409).json({
+        message: "This order total is too large. Please reduce the quantity.",
       });
     }
 
@@ -349,8 +353,8 @@ router.get("/sales-summary", requireRole("ADMIN"), async (_req, res) => {
     ]);
 
     const salesTotal = orders.reduce(
-      (sum, order) => sum + Number(order.total),
-      0,
+      (sum, order) => sum.add(order.total),
+      new Prisma.Decimal(0),
     );
 
     const unitsSold = orders.reduce(

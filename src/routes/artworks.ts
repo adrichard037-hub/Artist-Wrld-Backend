@@ -61,7 +61,14 @@ const artworkSchema = z.object({
   title: z.string().trim().min(1).max(150),
   category: z.string().trim().min(1).max(80),
   description: z.string().max(10000).nullable().optional(),
-  price: z.number().finite().positive().max(9999999999.99),
+  price: z
+    .number()
+    .finite()
+    .min(0.01)
+    .max(99999999.99)
+    .refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6, {
+      message: "Price can have at most 2 decimal places.",
+    }),
   image: z.string().max(7_500_000).refine(
     (value) => {
       if (value.startsWith("data:")) {
