@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
+import { attachAvailability } from "../lib/availability.js";
 
 const router = Router();
 
@@ -171,10 +172,12 @@ router.get("/public/:id", async (req, res) => {
           ? categories.join(", ")
           : "Artist",
       },
-      artworks: artworks.map((artwork) => ({
-        ...artwork,
-        price: Number(artwork.price),
-      })),
+      artworks: await attachAvailability(
+        artworks.map((artwork) => ({
+          ...artwork,
+          price: Number(artwork.price),
+        })),
+      ),
     });
   } catch (error) {
     console.error(

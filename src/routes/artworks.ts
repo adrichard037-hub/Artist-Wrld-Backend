@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { attachAvailability, IN_PROGRESS_ORDER_STATUSES } from "../lib/availability.js";
 import { requireAuth, requireRole, requireRegisteredArtist } from "../middleware/auth.js";
 
 const router = Router();
@@ -41,7 +42,9 @@ router.get("/public", async (_req, res) => {
         artist: artistNames.get(artwork.artistId),
       }));
 
-    return res.status(200).json({ artworks: publicArtworks });
+    return res.status(200).json({
+      artworks: await attachAvailability(publicArtworks),
+    });
   } catch (error) {
     console.error(
       "Public artwork retrieval failed:",
@@ -113,7 +116,9 @@ router.get("/", async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    return res.status(200).json({ artworks });
+    return res.status(200).json({
+      artworks: await attachAvailability(artworks),
+    });
   } catch (error) {
     console.error(
       "Artwork retrieval failed:",
@@ -307,6 +312,22 @@ router.delete("/:id", requireRole("ARTIST"), requireRegisteredArtist, async (req
     if (!existing) {
       return res.status(404).json({
         message: "Artwork not found in your account.",
+      });
+    }
+
+    // An artwork with an order in progress cannot disappear from under the buyer.
+    const inProgressOrder = await prisma.order.findFirst({
+      where: {
+        artworkId: existing.id,
+        status: { in: IN_PROGRESS_ORDER_STATUSES },
+      },
+      select: { id: true },
+    });
+
+    if (inProgressOrder) {
+      return res.status(409).json({
+        message:
+          "This artwork has an order in progress. It can be removed once that order is delivered or cancelled.",
       });
     }
 

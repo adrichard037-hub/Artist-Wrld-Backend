@@ -1,6 +1,7 @@
 ﻿import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { attachAvailability } from "../lib/availability.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
@@ -24,7 +25,16 @@ router.get("/", async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    return res.status(200).json({ items });
+    const artworksWithAvailability = await attachAvailability(
+      items.map((item) => item.artwork),
+    );
+
+    return res.status(200).json({
+      items: items.map((item, index) => ({
+        ...item,
+        artwork: artworksWithAvailability[index],
+      })),
+    });
   } catch (error) {
     console.error("Wishlist retrieval failed:", error instanceof Error ? error.message : "Unknown error");
     return res.status(500).json({ message: "Unable to retrieve your wishlist." });

@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
+import { ACTIVE_ORDER_STATUSES } from "../lib/availability.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
@@ -10,7 +11,8 @@ router.use(requireAuth);
 
 const orderSchema = z.object({
   artworkId: z.string().trim().min(1).max(191),
-  quantity: z.number().int().min(1).max(100),
+  // Every artwork is a one-of-a-kind original, so only one can be ordered.
+  quantity: z.literal(1),
   shippingAddress: z.string().trim().min(5).max(2000),
 }).strict();
 
@@ -221,19 +223,48 @@ router.post("/orders", requireRole("BUYER"), async (req, res) => {
       });
     }
 
-    const order = await prisma.order.create({
-      data: {
-        buyerId: buyer.id,
-        artistId: artwork.artistId,
-        artworkId: artwork.id,
-        artworkTitle: artwork.title,
-        quantity: parsed.data.quantity,
-        unitPrice: unitPrice.toFixed(2),
-        total: total.toFixed(2),
-        status: "PENDING",
-        shippingAddress: parsed.data.shippingAddress,
-      },
+    // An original can only be sold once. Updating the artwork row first locks
+    // it, so two buyers ordering the same piece at the same moment are handled
+    // one after the other, and the second one is turned away below.
+    const order = await prisma.$transaction(async (tx) => {
+      await tx.artwork.update({
+        where: { id: artwork.id },
+        data: { views: { increment: 0 } },
+      });
+
+      const alreadyOrdered = await tx.order.findFirst({
+        where: {
+          artworkId: artwork.id,
+          status: { in: ACTIVE_ORDER_STATUSES },
+        },
+        select: { id: true },
+      });
+
+      if (alreadyOrdered) {
+        return null;
+      }
+
+      return tx.order.create({
+        data: {
+          buyerId: buyer.id,
+          artistId: artwork.artistId,
+          artworkId: artwork.id,
+          artworkTitle: artwork.title,
+          quantity: parsed.data.quantity,
+          unitPrice: unitPrice.toFixed(2),
+          total: total.toFixed(2),
+          status: "PENDING",
+          shippingAddress: parsed.data.shippingAddress,
+        },
+      });
     });
+
+    if (!order) {
+      return res.status(409).json({
+        message:
+          "This artwork is no longer available. It has already been ordered by another buyer.",
+      });
+    }
 
     await prisma.auditlog.create({
       data: {
@@ -294,13 +325,33 @@ router.patch(
     try {
       const existing = await prisma.order.findUnique({
         where: { id: orderId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, artworkId: true },
       });
 
       if (!existing) {
         return res.status(404).json({
           message: "Order not found.",
         });
+      }
+
+      // Reopening a cancelled order must not sell the same original twice if
+      // someone else has ordered it in the meantime.
+      if (existing.status === "CANCELLED" && parsed.data.status !== "CANCELLED") {
+        const conflictingOrder = await prisma.order.findFirst({
+          where: {
+            artworkId: existing.artworkId,
+            id: { not: existing.id },
+            status: { in: ACTIVE_ORDER_STATUSES },
+          },
+          select: { id: true },
+        });
+
+        if (conflictingOrder) {
+          return res.status(409).json({
+            message:
+              "This artwork has since been ordered by someone else, so this order cannot be reopened.",
+          });
+        }
       }
 
       const order = await prisma.order.update({
