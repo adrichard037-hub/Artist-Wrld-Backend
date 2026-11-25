@@ -35,6 +35,8 @@ router.get("/profile", async (req, res) => {
         username: true,
         email: true,
         role: true,
+        twoFactorEnabled: true,
+        artistApprovalStatus: true,
       },
     });
 
